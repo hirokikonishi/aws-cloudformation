@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AssetManagement API Server.
+Parameters:
+  Certificate:
+    Description: SSL Certificate ARN.
+    Type: String
+    Default: arn:aws:acm:${AWS::Region}:${your_account_id}:certificate/${certificate_id}
+  EnvName:
+    Type: String
+    Description: Name of an environment. 'dev', 'staging', 'production' and any name.
+    AllowedPattern: ^.*[^0-9]$
+    ConstraintDescription: Must end with non numberic character.
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+    Description: Name of an existing EC2 KeyPair
+Outputs:
+  ALB:
+    Description: ALB.
+    Value:
+      Ref: ALB
+    Export:
+      Name:
+        Fn::Sub: ALB-${EnvName}
+  ALBTG:       
+    Description: ALBTG.
+    Value:
+      Ref: ALBTG
+Resources:
+  ALBTG:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /index.html
+      HealthCheckPort: 9000
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Matcher: 
+        HttpCode: 200-499
+      Name: 
+        Fn::Sub: alb-tg-${EnvName}
+      Port: 9000
+      Protocol: HTTP
+      UnhealthyThresholdCount: 3
+      VpcId: 
+        Fn::ImportValue:
+          Fn::Sub: VPC-${EnvName}
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: 
+        Fn::Sub: alb-${EnvName}
+      Scheme: internet-facing
+      SecurityGroups:
+        - Fn::GetAtt:
+          - ALBSecurityGroup
+          - GroupId
+      Subnets:
+        - Fn::ImportValue:
+            Fn::Sub: Subnet1-${EnvName}
+        - Fn::ImportValue:
+            Fn::Sub: Subnet2-${EnvName}
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: instance-${EnvName}
+      IpAddressType: ipv4
+    DependsOn: ALBSubnetRouteTableAssociation  
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties: 
+      Certificates:
+        - CertificateArn: !Ref 'Certificate'
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTG
+      LoadBalancerArn: !Ref ALB
+      Port: 443
+      Protocol: HTTPS
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: A Security group for a ALB.
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 443
+          IpProtocol: tcp
+          ToPort: 443
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: ELB-${EnvName}
+      VpcId:
+        Fn::ImportValue:
+          Fn::Sub: VPC-${EnvName}
+  ALBSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      IpProtocol: tcp
+      FromPort: 9000
+      ToPort: 9000
+      SourceSecurityGroupId:
+        Ref: ALBSecurityGroup
+      GroupId:
+        Fn::ImportValue:
+          Fn::Sub: SecurityGroupId-${EnvName}
+  ALBSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: ALB-${EnvName}
+      VpcId:
+        Fn::ImportValue:
+          Fn::Sub: VPC-${EnvName}
+  ALBSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId:
+        Fn::ImportValue:
+          RouteTableId-${EnvName}
+      SubnetId:
+        Ref: ALBSubnet

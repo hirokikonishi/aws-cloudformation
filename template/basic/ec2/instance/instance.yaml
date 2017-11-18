@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: build ec2 Instance.
+Parameters:
+  EnvName:
+    Type: String
+    Description: Name of an environment. 'dev', 'staging', 'production' and any name.
+    AllowedPattern: ^.*[^0-9]$
+    ConstraintDescription: Must end with non numberic character.
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+    Description: Name of an existing EC2 KeyPair
+Outputs:
+  InstanceId:
+    Description: EC2InstanceId.
+    Value:
+      Ref: EC2Instance
+    Export:
+      Name:
+        Fn::Sub: EC2InstanceId-${EnvName}
+  InstancePublicIp:
+    Description: EC2InstancePablicIpAddress.
+    Value:
+      Fn:GetAtt: [Instance, PublicIp]
+    Export:
+      Name:
+        Fn::Sub: EC2InstancePublicIp-${EnvName}    
+Resources:
+  Type: "AWS::EC2::Instance"
+  Properties:
+    ImageId: ami-${your_ami_id}
+    InstanceType: m4.large
+    KeyName: 
+      Ref: KeyName
+    Monitoring: True
+    SecurityGroups:
+      - Fn::ImportValue:
+        Fn::Sub: ${your_export_security_group_ids}-${EnvName}
+    UserData:
+        Fn::Base64:
+          Fn::Sub: |+
+            #!/bin/bash
+            INSTANCE_ID=`curl -s http://169.254.169.254/latest/meta-data/instance-id`
+            aws ec2 create-tags --region ${AWS::Region} --resources ${!INSTANCE_ID} --tags Key=\"Name\",Value=${!INSTANCE_ID}-${EnvName}
+            yum -y update
